@@ -9,26 +9,15 @@ const PORT = process.env.PORT || 3000;
 const path = require('path');
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['https://your-netlify-domain.netlify.app'] // Replace with your actual Netlify URL
+        : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5500']
+}));
 app.use(express.json());
 
 // Serve static files from frontend directory
 app.use(express.static(path.join(__dirname, 'frontend')));
-
-// Handle React routing, return all requests to React app
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  
-  res.sendFile(path.join(__dirname, 'frontend', 'index.html'), (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(500).send('Internal Server Error');
-    }
-  });
-});
-
 
 // Initialize Supabase (add these to your .env file)
 const supabase = createClient(
@@ -151,31 +140,48 @@ for (let i = 1; i <= 17; i++) {
 
 // API Endpoints
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'Backend is running!',
+        timestamp: new Date().toISOString(),
+        mentors: Object.keys(mentorCredentials).length
+    });
+});
+
 // Get all students data
 app.get('/api/students', (req, res) => {
-    res.json({ students: studentsData });
+    try {
+        res.json({ students: studentsData });
+    } catch (error) {
+        console.error('Error fetching students:', error);
+        res.status(500).json({ error: 'Failed to fetch students' });
+    }
 });
 
 // Get mentors list
 app.get('/api/mentors', (req, res) => {
-    const mentorList = [];
-    
-    for (let i = 1; i <= 17; i++) {
-        const username = process.env[`MENTOR${i}_USERNAME`];
-        if (username) {
-            mentorList.push({
-                username: username,
-                name: mentorNames[i - 1]
-            });
+    try {
+        const mentorList = [];
+        
+        for (let i = 1; i <= 17; i++) {
+            const username = process.env[`MENTOR${i}_USERNAME`];
+            if (username && mentorNames[i - 1]) {
+                mentorList.push({
+                    username: username,
+                    name: mentorNames[i - 1]
+                });
+            }
         }
+        
+        res.json({ mentors: mentorList });
+    } catch (error) {
+        console.error('Error fetching mentors:', error);
+        res.status(500).json({ error: 'Failed to fetch mentors' });
     }
-    
-    res.json({ mentors: mentorList });
 });
 
 // Get all teams
-// Get all teams - FIXED VERSION
-// Get all teams - FIXED VERSION
 app.get('/api/teams', async (req, res) => {
     try {
         console.log('Fetching teams from Supabase...');
@@ -205,25 +211,34 @@ app.get('/api/teams', async (req, res) => {
     }
 });
 
-
-
 // Save team
 app.post('/api/teams', async (req, res) => {
     try {
         const teamData = req.body;
         console.log('Saving team:', teamData);
         
+        // Validate required fields
+        if (!teamData.team_id || !teamData.team_name || !teamData.members) {
+            return res.status(400).json({ error: 'Missing required team data' });
+        }
+        
         const { data, error } = await supabase
             .from('teams')
             .insert([teamData])
             .select();
         
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase insert error:', error);
+            throw error;
+        }
         
         res.json({ success: true, team: data[0] });
     } catch (error) {
         console.error('Error saving team:', error);
-        res.status(500).json({ error: 'Failed to save team' });
+        res.status(500).json({ 
+            error: 'Failed to save team',
+            details: error.message 
+        });
     }
 });
 
@@ -232,17 +247,27 @@ app.delete('/api/teams/:teamId', async (req, res) => {
     try {
         const { teamId } = req.params;
         
+        if (!teamId) {
+            return res.status(400).json({ error: 'Team ID is required' });
+        }
+        
         const { error } = await supabase
             .from('teams')
             .delete()
             .eq('team_id', teamId);
         
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase delete error:', error);
+            throw error;
+        }
         
-        res.json({ success: true });
+        res.json({ success: true, message: 'Team deleted successfully' });
     } catch (error) {
         console.error('Error deleting team:', error);
-        res.status(500).json({ error: 'Failed to delete team' });
+        res.status(500).json({ 
+            error: 'Failed to delete team',
+            details: error.message 
+        });
     }
 });
 
@@ -252,18 +277,32 @@ app.put('/api/teams/:teamId', async (req, res) => {
         const { teamId } = req.params;
         const updateData = req.body;
         
+        if (!teamId) {
+            return res.status(400).json({ error: 'Team ID is required' });
+        }
+        
         const { data, error } = await supabase
             .from('teams')
             .update(updateData)
             .eq('team_id', teamId)
             .select();
         
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase update error:', error);
+            throw error;
+        }
+        
+        if (!data || data.length === 0) {
+            return res.status(404).json({ error: 'Team not found' });
+        }
         
         res.json({ success: true, team: data[0] });
     } catch (error) {
         console.error('Error updating team:', error);
-        res.status(500).json({ error: 'Failed to update team' });
+        res.status(500).json({ 
+            error: 'Failed to update team',
+            details: error.message 
+        });
     }
 });
 
@@ -273,24 +312,34 @@ app.get('/api/students/available/:department', async (req, res) => {
         const { department } = req.params;
         const { excludeTeamId } = req.query;
         
+        // Validate department
+        if (!studentsData[department]) {
+            return res.status(400).json({ error: 'Invalid department' });
+        }
+        
         // Get all teams
         const { data: teams, error } = await supabase
             .from('teams')
             .select('*');
         
-        if (error) throw error;
+        if (error) {
+            console.error('Error fetching teams for availability check:', error);
+            throw error;
+        }
         
         // Get all registered student IDs
         const registeredStudents = new Set();
-        teams.forEach(team => {
+        (teams || []).forEach(team => {
             // Skip the team being edited if excludeTeamId is provided
             if (excludeTeamId && team.team_id === excludeTeamId) {
                 return;
             }
             
-            team.members.forEach(memberId => {
-                registeredStudents.add(memberId);
-            });
+            if (team.members && Array.isArray(team.members)) {
+                team.members.forEach(memberId => {
+                    registeredStudents.add(memberId);
+                });
+            }
         });
         
         // Filter available students
@@ -302,61 +351,139 @@ app.get('/api/students/available/:department', async (req, res) => {
         
         res.json({ 
             students: availableStudents,
-            department: department
+            department: department,
+            total: departmentStudents.length,
+            available: availableStudents.length,
+            registered: departmentStudents.length - availableStudents.length
         });
     } catch (error) {
         console.error('Error getting available students:', error);
-        res.status(500).json({ error: 'Failed to get available students' });
+        res.status(500).json({ 
+            error: 'Failed to get available students',
+            details: error.message 
+        });
     }
 });
 
 // Authentication endpoints
 app.post('/api/auth/admin', (req, res) => {
-    const { username, password } = req.body;
-    console.log('Admin login attempt:', username);
-    
-    if (username === process.env.ADMIN_USERNAME && 
-        password === process.env.ADMIN_PASSWORD) {
-        res.json({ success: true });
-    } else {
-        res.json({ success: false, message: 'Invalid admin credentials' });
+    try {
+        const { username, password } = req.body;
+        console.log('Admin login attempt:', username);
+        
+        if (!username || !password) {
+            return res.status(400).json({ success: false, message: 'Username and password required' });
+        }
+        
+        if (username === process.env.ADMIN_USERNAME && 
+            password === process.env.ADMIN_PASSWORD) {
+            res.json({ success: true, role: 'admin' });
+        } else {
+            res.json({ success: false, message: 'Invalid admin credentials' });
+        }
+    } catch (error) {
+        console.error('Admin auth error:', error);
+        res.status(500).json({ success: false, message: 'Authentication error' });
     }
 });
 
 app.post('/api/auth/hod', (req, res) => {
-    const { username, password } = req.body;
-    console.log('HOD login attempt:', username);
-    
-    if (username === process.env.HOD_USERNAME && 
-        password === process.env.HOD_PASSWORD) {
-        res.json({ success: true });
-    } else {
-        res.json({ success: false, message: 'Invalid HOD credentials' });
+    try {
+        const { username, password } = req.body;
+        console.log('HOD login attempt:', username);
+        
+        if (!username || !password) {
+            return res.status(400).json({ success: false, message: 'Username and password required' });
+        }
+        
+        if (username === process.env.HOD_USERNAME && 
+            password === process.env.HOD_PASSWORD) {
+            res.json({ success: true, role: 'hod' });
+        } else {
+            res.json({ success: false, message: 'Invalid HOD credentials' });
+        }
+    } catch (error) {
+        console.error('HOD auth error:', error);
+        res.status(500).json({ success: false, message: 'Authentication error' });
     }
 });
 
 app.post('/api/auth/mentor', (req, res) => {
-    const { username, password } = req.body;
-    console.log('Mentor login attempt:', username);
-    
-    const mentorData = mentorCredentials[username];
-    if (mentorData && mentorData.password === password) {
-        res.json({ 
-            success: true, 
-            name: mentorData.name,
-            username: username
-        });
-    } else {
-        res.json({ success: false, message: 'Invalid mentor credentials' });
+    try {
+        const { username, password } = req.body;
+        console.log('Mentor login attempt:', username);
+        
+        if (!username || !password) {
+            return res.status(400).json({ success: false, message: 'Username and password required' });
+        }
+        
+        const mentorData = mentorCredentials[username];
+        if (mentorData && mentorData.password === password) {
+            res.json({ 
+                success: true, 
+                role: 'mentor',
+                name: mentorData.name,
+                username: username
+            });
+        } else {
+            res.json({ success: false, message: 'Invalid mentor credentials' });
+        }
+    } catch (error) {
+        console.error('Mentor auth error:', error);
+        res.status(500).json({ success: false, message: 'Authentication error' });
     }
 });
 
+// Test endpoint
 app.get('/test', (req, res) => {
-    res.json({ message: 'Backend is running!' });
+    try {
+        res.json({ 
+            message: 'Backend is running!',
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV || 'development',
+            supabaseConnected: !!supabase,
+            mentorsLoaded: Object.keys(mentorCredentials).length
+        });
+    } catch (error) {
+        console.error('Test endpoint error:', error);
+        res.status(500).json({ error: 'Test failed' });
+    }
+});
+
+// Handle React routing, return all requests to React app
+app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/') || req.path.startsWith('/test')) {
+        return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    
+    // Serve the frontend
+    res.sendFile(path.join(__dirname, 'frontend', 'index.html'), (err) => {
+        if (err) {
+            console.error('Error serving index.html:', err);
+            res.status(500).json({ 
+                error: 'Frontend not available',
+                message: 'Make sure index.html exists in the frontend directory'
+            });
+        }
+    });
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+    console.error('Unhandled error:', error);
+    res.status(500).json({ 
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
 });
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Test URL: http://localhost:${PORT}/test`);
-    console.log(`Students: CSE A (${studentsData['CSE A'].length}), CSE B (${studentsData['CSE B'].length}), AIDS (${studentsData['AIDS'].length})`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Students loaded: CSE A (${studentsData['CSE A'].length}), CSE B (${studentsData['CSE B'].length}), AIDS (${studentsData['AIDS'].length})`);
+    console.log(`Mentors loaded: ${Object.keys(mentorCredentials).length}`);
+    console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'Configured' : 'Not configured'}`);
 });
