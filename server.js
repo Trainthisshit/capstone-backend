@@ -9,11 +9,19 @@ const PORT = process.env.PORT || 3000;
 const path = require('path');
 
 // Middleware
+// Middleware
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? ['https://your-netlify-domain.netlify.app'] // Replace with your actual Netlify URL
-        : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5500']
+    origin: [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5500',
+        'https://capstone-registration-portal.netlify.app'  // Your actual Netlify URL
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 
 // Serve static files from frontend directory
