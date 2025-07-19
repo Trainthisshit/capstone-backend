@@ -226,9 +226,9 @@ app.post('/api/teams', async (req, res) => {
         console.log('Saving team:', teamData);
         
         // Validate required fields
-        if (!teamData.team_id || !teamData.team_name || !teamData.members) {
-            return res.status(400).json({ error: 'Missing required team data' });
-        }
+        if (!teamData.team_id || !teamData.name || !teamData.members) {
+    return res.status(400).json({ error: 'Missing required team data: team_id, name, and members are required' });
+}
         
         const { data, error } = await supabase
             .from('teams')
