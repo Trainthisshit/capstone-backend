@@ -1,16 +1,13 @@
 const express = require('express');
 const { checkIdeaSimilarity } = require('./ideaValidator');
-
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 const path = require('path');
 
-// Middleware
 // Middleware
 app.use(cors({
     origin: [
@@ -23,7 +20,6 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 
 // Serve static files from frontend directory
@@ -36,6 +32,9 @@ const supabase = createClient(
 );
 
 // Student data - your exact data
+const studentsData = { ... }; // <--- keep your studentsData object here! Omitted for brevity
+
+
 const studentsData = {
     "CSE A": [
         "Daksh Sharma", "Tanmay Pravin Tate", "Deven Sharad Kshirsagar", "Aarush Pradeep Kote",
@@ -114,29 +113,16 @@ const studentsData = {
         "Aashka Akash Porwal", "Samuel Shadrak Chol"
     ]
 };
-
 // Build mentor credentials from environment variables
 const mentorCredentials = {};
 const mentorNames = [
-    'Jyoti Khurpude',
-    'Sanjivani Kulkarni',
-    'Mrunal Fatangare',
-    'Hemlata Ohal',
-    'Farahhdeeba Shaikh',
-    'Prerana Patil',
-    'Yogesh Patil',
-    'Vilas Rathod',
-    'Pradeep Paygude',
-    'Kajal Chavan',
-    'Megha Dhotey',
-    'Pallavi Nehete',
-    'Nita Dongre',
-    'Mrunal Aware',
-    'Shilpa Shitole',
-    'Vaishali Langote',
-    'Sulkshana Malwade'
+    'Jyoti Khurpude', 'Sanjivani Kulkarni', 'Mrunal Fatangare', 'Hemlata Ohal',
+    'Farahhdeeba Shaikh', 'Prerana Patil', 'Yogesh Patil', 'Vilas Rathod',
+    'Pradeep Paygude', 'Kajal Chavan', 'Megha Dhotey', 'Pallavi Nehete',
+    'Nita Dongre', 'Mrunal Aware', 'Shilpa Shitole', 'Vaishali Langote', 'Sulkshana Malwade'
 ];
 
+const mentorCredentials = {};
 for (let i = 1; i <= 17; i++) {
     const username = process.env[`MENTOR${i}_USERNAME`];
     const password = process.env[`MENTOR${i}_PASSWORD`];
@@ -152,7 +138,7 @@ for (let i = 1; i <= 17; i++) {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-    res.json({ 
+    res.json({
         status: 'Backend is running!',
         timestamp: new Date().toISOString(),
         mentors: Object.keys(mentorCredentials).length
@@ -173,7 +159,6 @@ app.get('/api/students', (req, res) => {
 app.get('/api/mentors', (req, res) => {
     try {
         const mentorList = [];
-        
         for (let i = 1; i <= 17; i++) {
             const username = process.env[`MENTOR${i}_USERNAME`];
             if (username && mentorNames[i - 1]) {
@@ -183,7 +168,6 @@ app.get('/api/mentors', (req, res) => {
                 });
             }
         }
-        
         res.json({ mentors: mentorList });
     } catch (error) {
         console.error('Error fetching mentors:', error);
@@ -195,105 +179,108 @@ app.get('/api/mentors', (req, res) => {
 app.get('/api/teams', async (req, res) => {
     try {
         console.log('Fetching teams from Supabase...');
-        
+
         if (!supabase) {
             throw new Error('Supabase client not initialized');
         }
-        
+
         const { data, error } = await supabase
             .from('teams')
             .select('*')
             .order('registration_date', { ascending: false });
-        
+
         if (error) {
             console.error('Supabase error:', error);
             throw error;
         }
-        
+
         console.log(`Successfully fetched ${data ? data.length : 0} teams`);
         res.json({ teams: data || [] });
     } catch (error) {
         console.error('Error fetching teams:', error);
-        res.status(500).json({ 
-            error: 'Failed to fetch teams', 
-            details: error.message 
+        res.status(500).json({
+            error: 'Failed to fetch teams',
+            details: error.message
         });
     }
 });
 
-const teamData = req.body;
-console.log('Saving team:', teamData);
-// Validate required fields...
-if (!teamData.team_id || !teamData.name || !teamData.members) {
-  return res.status(400).json({ error: 'Missing required team data: team_id, name, and members are required' });
-}
+// ------------- FIXED: Register Team -------------
+app.post('/api/teams', async (req, res) => {
+    try {
+        const teamData = req.body;
+        console.log('Saving team:', teamData);
 
-// -------------------------------------
-// NEW LOGIC — AI DUPLICATE CHECK
-// -------------------------------------
-try {
-  // Get all existing project ideas from teams table (flattened)
-  const { data: teams, error: fetchErr } = await supabase.from('teams').select('project_ideas');
-  if (fetchErr) throw fetchErr;
-  const allRegisteredIdeas = (teams || []).flatMap(t => Array.isArray(t.project_ideas) ? t.project_ideas : []);
+        // Validate required fields...
+        if (!teamData.team_id || !teamData.name || !teamData.members) {
+            return res.status(400).json({ error: 'Missing required team data: team_id, name, and members are required' });
+        }
 
-  // Only check if project_ideas is provided (as array)
-  const userIdeas = Array.isArray(teamData.project_ideas) ? teamData.project_ideas : [];
-  const similarArray = await checkIdeaSimilarity(userIdeas, allRegisteredIdeas);
+        // --- AI Duplicate Check
+        try {
+            const { data: teams, error: fetchErr } = await supabase.from('teams').select('project_ideas');
+            if (fetchErr) throw fetchErr;
+            const allRegisteredIdeas = (teams || []).flatMap(t => Array.isArray(t.project_ideas) ? t.project_ideas : []);
+            const userIdeas = Array.isArray(teamData.project_ideas) ? teamData.project_ideas : [];
+            const similarArray = await checkIdeaSimilarity(userIdeas, allRegisteredIdeas);
 
-  // If any ideas are similar, and not forced, send feedback
-  if (similarArray.some(Boolean) && !teamData.forceRegisterAnyway) {
-    return res.status(200).json({
-      analysis: true,
-      similar: similarArray, // e.g. [true, false, false]
-      message: 'One or more ideas are similar to existing registered ideas. Edit ideas or Register Anyway?'
-    });
-  }
-  // If "Register Anyway", or all ideas are unique, continue to save as usual!
-} catch(error) {
-  // If any LLM/database issue, DO NOT stop user, just log and continue!
-  console.error('Idea similarity check failed (continuing anyway):', error.message);
-}
-// ------------- END AI LOGIC -------------
+            if (similarArray.some(Boolean) && !teamData.forceRegisterAnyway) {
+                return res.status(200).json({
+                    analysis: true,
+                    similar: similarArray, // e.g. [true, false, false]
+                    message: 'One or more ideas are similar to existing registered ideas. Edit ideas or Register Anyway?'
+                });
+            }
+            // If "Register Anyway", or all ideas are unique, continue to save as usual!
+        } catch (error) {
+            // If any LLM/database issue, DO NOT stop user, just log and continue!
+            console.error('Idea similarity check failed (continuing anyway):', error.message);
+        }
+        // --- [END AI DUPLICATE LOGIC] ---
 
-// Now (original logic) save the team:
-const { data, error } = await supabase
-  .from('teams')
-  .insert([teamData])
-  .select();
+        // Save the team in Supabase
+        const { data, error } = await supabase
+            .from('teams')
+            .insert([teamData])
+            .select();
 
-if (error) {
-  console.error('Supabase insert error:', error);
-  throw error;
-}
-res.json({ success: true, team: data[0] });
+        if (error) {
+            console.error('Supabase insert error:', error);
+            throw error;
+        }
+        res.json({ success: true, team: data[0] });
 
+    } catch (error) {
+        console.error('Error saving team:', error);
+        res.status(500).json({ error: error.message || 'Internal server error' });
+    }
+});
 
 // Delete team
 app.delete('/api/teams/:teamId', async (req, res) => {
     try {
         const { teamId } = req.params;
-        
+
         if (!teamId) {
             return res.status(400).json({ error: 'Team ID is required' });
         }
-        
+
         const { error } = await supabase
             .from('teams')
             .delete()
             .eq('team_id', teamId);
-        
+
         if (error) {
             console.error('Supabase delete error:', error);
             throw error;
         }
-        
+
         res.json({ success: true, message: 'Team deleted successfully' });
     } catch (error) {
         console.error('Error deleting team:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to delete team',
-            details: error.message 
+            details: error.message
         });
     }
 });
@@ -303,32 +290,32 @@ app.put('/api/teams/:teamId', async (req, res) => {
     try {
         const { teamId } = req.params;
         const updateData = req.body;
-        
+
         if (!teamId) {
             return res.status(400).json({ error: 'Team ID is required' });
         }
-        
+
         const { data, error } = await supabase
             .from('teams')
             .update(updateData)
             .eq('team_id', teamId)
             .select();
-        
+
         if (error) {
             console.error('Supabase update error:', error);
             throw error;
         }
-        
+
         if (!data || data.length === 0) {
             return res.status(404).json({ error: 'Team not found' });
         }
-        
+
         res.json({ success: true, team: data[0] });
     } catch (error) {
         console.error('Error updating team:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to update team',
-            details: error.message 
+            details: error.message
         });
     }
 });
@@ -338,22 +325,22 @@ app.get('/api/students/available/:department', async (req, res) => {
     try {
         const { department } = req.params;
         const { excludeTeamId } = req.query;
-        
+
         // Validate department
         if (!studentsData[department]) {
             return res.status(400).json({ error: 'Invalid department' });
         }
-        
+
         // Get all teams
         const { data: teams, error } = await supabase
             .from('teams')
             .select('*');
-        
+
         if (error) {
             console.error('Error fetching teams for availability check:', error);
             throw error;
         }
-        
+
         // Get all registered student IDs
         const registeredStudents = new Set();
         (teams || []).forEach(team => {
@@ -361,22 +348,21 @@ app.get('/api/students/available/:department', async (req, res) => {
             if (excludeTeamId && team.team_id === excludeTeamId) {
                 return;
             }
-            
             if (team.members && Array.isArray(team.members)) {
                 team.members.forEach(memberId => {
                     registeredStudents.add(memberId);
                 });
             }
         });
-        
+
         // Filter available students
         const departmentStudents = studentsData[department] || [];
         const availableStudents = departmentStudents.filter((student, index) => {
             const studentId = `${department}_${index}`;
             return !registeredStudents.has(studentId);
         });
-        
-        res.json({ 
+
+        res.json({
             students: availableStudents,
             department: department,
             total: departmentStudents.length,
@@ -385,9 +371,9 @@ app.get('/api/students/available/:department', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting available students:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to get available students',
-            details: error.message 
+            details: error.message
         });
     }
 });
@@ -397,12 +383,11 @@ app.post('/api/auth/admin', (req, res) => {
     try {
         const { username, password } = req.body;
         console.log('Admin login attempt:', username);
-        
+
         if (!username || !password) {
             return res.status(400).json({ success: false, message: 'Username and password required' });
         }
-        
-        if (username === process.env.ADMIN_USERNAME && 
+        if (username === process.env.ADMIN_USERNAME &&
             password === process.env.ADMIN_PASSWORD) {
             res.json({ success: true, role: 'admin' });
         } else {
@@ -418,12 +403,12 @@ app.post('/api/auth/hod', (req, res) => {
     try {
         const { username, password } = req.body;
         console.log('HOD login attempt:', username);
-        
+
         if (!username || !password) {
             return res.status(400).json({ success: false, message: 'Username and password required' });
         }
-        
-        if (username === process.env.HOD_USERNAME && 
+
+        if (username === process.env.HOD_USERNAME &&
             password === process.env.HOD_PASSWORD) {
             res.json({ success: true, role: 'hod' });
         } else {
@@ -439,15 +424,15 @@ app.post('/api/auth/mentor', (req, res) => {
     try {
         const { username, password } = req.body;
         console.log('Mentor login attempt:', username);
-        
+
         if (!username || !password) {
             return res.status(400).json({ success: false, message: 'Username and password required' });
         }
-        
+
         const mentorData = mentorCredentials[username];
         if (mentorData && mentorData.password === password) {
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 role: 'mentor',
                 name: mentorData.name,
                 username: username
@@ -464,7 +449,7 @@ app.post('/api/auth/mentor', (req, res) => {
 // Test endpoint
 app.get('/test', (req, res) => {
     try {
-        res.json({ 
+        res.json({
             message: 'Backend is running!',
             timestamp: new Date().toISOString(),
             environment: process.env.NODE_ENV || 'development',
@@ -483,12 +468,11 @@ app.get('*', (req, res) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/test')) {
         return res.status(404).json({ error: 'Endpoint not found' });
     }
-    
     // Serve the frontend
     res.sendFile(path.join(__dirname, 'frontend', 'index.html'), (err) => {
         if (err) {
             console.error('Error serving index.html:', err);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: 'Frontend not available',
                 message: 'Make sure index.html exists in the frontend directory'
             });
@@ -499,7 +483,7 @@ app.get('*', (req, res) => {
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
         error: 'Internal server error',
         message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
     });
@@ -514,3 +498,4 @@ app.listen(PORT, () => {
     console.log(`Mentors loaded: ${Object.keys(mentorCredentials).length}`);
     console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'Configured' : 'Not configured'}`);
 });
+
