@@ -221,36 +221,53 @@ app.get('/api/teams', async (req, res) => {
     }
 });
 
-// Save team
-app.post('/api/teams', async (req, res) => {
-    try {
-        const teamData = req.body;
-        console.log('Saving team:', teamData);
-        
-        // Validate required fields
-        if (!teamData.team_id || !teamData.name || !teamData.members) {
-    return res.status(400).json({ error: 'Missing required team data: team_id, name, and members are required' });
+const teamData = req.body;
+console.log('Saving team:', teamData);
+// Validate required fields...
+if (!teamData.team_id || !teamData.name || !teamData.members) {
+  return res.status(400).json({ error: 'Missing required team data: team_id, name, and members are required' });
 }
-        
-        const { data, error } = await supabase
-            .from('teams')
-            .insert([teamData])
-            .select();
-        
-        if (error) {
-            console.error('Supabase insert error:', error);
-            throw error;
-        }
-        
-        res.json({ success: true, team: data[0] });
-    } catch (error) {
-        console.error('Error saving team:', error);
-        res.status(500).json({ 
-            error: 'Failed to save team',
-            details: error.message 
-        });
-    }
-});
+
+// -------------------------------------
+// NEW LOGIC — AI DUPLICATE CHECK
+// -------------------------------------
+try {
+  // Get all existing project ideas from teams table (flattened)
+  const { data: teams, error: fetchErr } = await supabase.from('teams').select('project_ideas');
+  if (fetchErr) throw fetchErr;
+  const allRegisteredIdeas = (teams || []).flatMap(t => Array.isArray(t.project_ideas) ? t.project_ideas : []);
+
+  // Only check if project_ideas is provided (as array)
+  const userIdeas = Array.isArray(teamData.project_ideas) ? teamData.project_ideas : [];
+  const similarArray = await checkIdeaSimilarity(userIdeas, allRegisteredIdeas);
+
+  // If any ideas are similar, and not forced, send feedback
+  if (similarArray.some(Boolean) && !teamData.forceRegisterAnyway) {
+    return res.status(200).json({
+      analysis: true,
+      similar: similarArray, // e.g. [true, false, false]
+      message: 'One or more ideas are similar to existing registered ideas. Edit ideas or Register Anyway?'
+    });
+  }
+  // If "Register Anyway", or all ideas are unique, continue to save as usual!
+} catch(error) {
+  // If any LLM/database issue, DO NOT stop user, just log and continue!
+  console.error('Idea similarity check failed (continuing anyway):', error.message);
+}
+// ------------- END AI LOGIC -------------
+
+// Now (original logic) save the team:
+const { data, error } = await supabase
+  .from('teams')
+  .insert([teamData])
+  .select();
+
+if (error) {
+  console.error('Supabase insert error:', error);
+  throw error;
+}
+res.json({ success: true, team: data[0] });
+
 
 // Delete team
 app.delete('/api/teams/:teamId', async (req, res) => {
