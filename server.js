@@ -30,11 +30,6 @@ const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
 );
-
-// Student data - your exact data
-const studentsData = { ... }; // <--- keep your studentsData object here! Omitted for brevity
-
-
 const studentsData = {
     "CSE A": [
         "Daksh Sharma", "Tanmay Pravin Tate", "Deven Sharad Kshirsagar", "Aarush Pradeep Kote",
