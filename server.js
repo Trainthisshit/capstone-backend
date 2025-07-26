@@ -1,4 +1,6 @@
 const express = require('express');
+const { checkIdeaSimilarity } = require('./ideaValidator');
+
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
