@@ -117,7 +117,6 @@ const mentorNames = [
     'Nita Dongre', 'Mrunal Aware', 'Shilpa Shitole', 'Vaishali Langote', 'Sulkshana Malwade'
 ];
 
-const mentorCredentials = {};
 for (let i = 1; i <= 17; i++) {
     const username = process.env[`MENTOR${i}_USERNAME`];
     const password = process.env[`MENTOR${i}_PASSWORD`];
